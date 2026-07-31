@@ -5,7 +5,7 @@ on:
     branches:
       - fu-alacarte-transfer-20260731
     paths:
-      - transfer/build_script.b64
+      - transfer/**
   workflow_dispatch:
 
 permissions:
