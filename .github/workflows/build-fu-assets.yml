@@ -1,0 +1,76 @@
+name: Build Fathers Unchained A La Carte Assets
+
+on:
+  push:
+    branches:
+      - fu-alacarte-transfer-20260731
+    paths:
+      - transfer/build_script.b64
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out transfer branch
+        uses: actions/checkout@v4
+
+      - name: Install document and image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice-writer fonts-dejavu-core
+          python -m pip install --upgrade pip
+          python -m pip install pillow python-docx
+
+      - name: Restore and run asset builder
+        env:
+          FU_ROOT: generated
+        run: |
+          mkdir -p transfer generated/pdf generated/zips
+          base64 -d transfer/build_script.b64 | gzip -d > transfer/build_fu_products.py
+          python transfer/build_fu_products.py
+
+      - name: Convert editable documents to PDF
+        run: |
+          mkdir -p generated/pdf
+          for f in generated/docx/*.docx; do
+            libreoffice --headless --convert-to pdf --outdir generated/pdf "$f"
+          done
+
+      - name: Package downloadable ZIP files
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path('generated')
+          products = [
+              ('certified-court-records-request-letter','Certified-Court-Records-Request-Letter'),
+              ('clerk-call-script','Clerk-Call-Script'),
+              ('case-timeline-worksheet','Case-Timeline-Worksheet'),
+              ('missing-record-issue-spotter','Missing-Record-Issue-Spotter'),
+              ('docket-to-document-comparison-sheet','Docket-to-Document-Comparison-Sheet'),
+              ('notice-of-hearing-review-sheet','Notice-of-Hearing-Review-Sheet'),
+              ('service-and-return-review-checklist','Service-and-Return-Review-Checklist'),
+              ('objection-and-preservation-log','Objection-and-Preservation-Log'),
+              ('hearing-argument-outline','Hearing-Argument-Outline'),
+              ('personal-jurisdiction-review-summary','Personal-Jurisdiction-Review-Summary'),
+          ]
+          (root/'zips').mkdir(parents=True, exist_ok=True)
+          for slug, pretty in products:
+              out = root/'zips'/f'{pretty}.zip'
+              with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+                  z.write(root/'docx'/f'{slug}.docx', f'{pretty}-Editable.docx')
+                  z.write(root/'pdf'/f'{slug}.pdf', f'{pretty}-Printable.pdf')
+                  z.write(root/f'{slug}-README.txt', 'README.txt')
+          PY
+
+      - name: Commit temporary transfer assets
+        run: |
+          git config user.name "Fathers Unchained Asset Builder"
+          git config user.email "jim@fathersunchained.com"
+          git add -f generated/covers generated/zips
+          git commit -m "Build temporary a la carte product assets"
+          git push origin HEAD:fu-alacarte-transfer-20260731
